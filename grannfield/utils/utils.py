@@ -4,6 +4,7 @@ Clean Energy Lab, University of Toronto Scarborough
 
 salatandua/grannfield: https://github.com/salatandua/grannfield
 """
+
 import copy
 import json
 import logging

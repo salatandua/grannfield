@@ -117,7 +117,7 @@ class GraNNFieldCalculator(Calculator):
             # Convert outputs to md format
             if self.model_energy is not None:
                 if self.model_energy not in model_results.keys():
-                    raise GrannFieldCalculatorError(
+                    raise GraNNFieldCalculatorError(
                         "'{}' is not a property of your modules. Please "
                         "check the modules "
                         "properties!".format(self.model_energy)
@@ -132,7 +132,7 @@ class GraNNFieldCalculator(Calculator):
 
             if self.model_forces is not None:
                 if self.model_forces not in forces_model_results.keys():
-                    raise GrannFieldCalculatorError(
+                    raise GraNNFieldCalculatorError(
                         "'{}' is not a property of your modules. Please "
                         "check the modules"
                         "properties!".format(self.model_forces)
@@ -150,11 +150,11 @@ class GraNNFieldCalculator(Calculator):
 
             if self.model_stress is not None:
                 if atoms.cell.volume <= 0.0:
-                    raise GrannFieldCalculatorError(
+                    raise GraNNFieldCalculatorError(
                         'Cell with 0 volume encountered for stress computation'
                     )
                 if self.model_stress not in stress_model_results.keys():
-                    raise GrannFieldCalculatorError(
+                    raise GraNNFieldCalculatorError(
                         '{} is not a property of your modules. Please '
                         'check the modules'
                         'properties! If desired, stress tensor computation can be '

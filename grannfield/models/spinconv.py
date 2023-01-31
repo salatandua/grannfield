@@ -21,15 +21,7 @@ from torch.nn import Embedding, Linear, ModuleList, Sequential
 from torch_geometric.nn import MessagePassing, SchNet, radius_graph
 from torch_scatter import scatter
 
-from ocpmodels.common.registry import registry
-from ocpmodels.common.transforms import RandomRotate
-from ocpmodels.common.utils import (
-    compute_neighbors,
-    conditional_grad,
-    get_pbc_distances,
-    radius_graph_pbc,
-)
-from ocpmodels.models.base import BaseModel
+from grannfield.utils.utils import get_pbc_distances, radius_graph_pbc
 
 try:
     from e3nn import o3
@@ -39,13 +31,10 @@ except Exception:
     pass
 
 
-@registry.register_model("spinconv")
-class spinconv(BaseModel):
+class spinconv(nn.Module):
     def __init__(
         self,
-        num_atoms,  # not used
-        bond_feat_dim,  # not used
-        num_targets,
+        num_targets=1,
         use_pbc=True,
         regress_forces=True,
         otf_graph=False,
@@ -189,9 +178,8 @@ class spinconv(BaseModel):
                 self.lmax,
             )
 
-    @conditional_grad(torch.enable_grad())
     def forward(self, data):
-        self.device = data.pos.device
+        self.device = data['positions'].device
         self.num_atoms = len(data.batch)
         self.batch_size = len(data.natoms)
 
@@ -199,14 +187,23 @@ class spinconv(BaseModel):
         if self.regress_forces:
             pos = pos.requires_grad_(True)
 
-        (
-            edge_index,
-            edge_distance,
-            edge_distance_vec,
-            cell_offsets,
-            _,  # cell offset distances
-            neighbors,
-        ) = self.generate_graph(data)
+        if self.use_pbc:
+            edge_index, cell_offsets, neighbors, _ = radius_graph_pbc(
+                data, self.cutoff, self.max_num_neighbors
+            )
+            pbc_distances = get_pbc_distances(
+                data['positions'],
+                edge_index,
+                data['cell'],
+                cell_offsets,
+                neighbors,
+                return_distances_vec=True
+            )
+            edge_distance = pbc_distances['distances']
+            edge_distance_vec = pbc_distances['distances_vec']
+            data['edge_index'] = edge_index
+            data['cell_offsets'] = cell_offsets
+            data['neighbors'] = neighbors
 
         edge_index, edge_distance, edge_distance_vec = self._filter_edges(
             edge_index,
@@ -239,8 +236,8 @@ class spinconv(BaseModel):
         # Initialize messages
         ###############################################################
 
-        source_element = data.atomic_numbers[edge_index[0, :]].long()
-        target_element = data.atomic_numbers[edge_index[1, :]].long()
+        source_element = data['atomic_numbers'][edge_index[0, :]].long()
+        target_element = data['atomic_numbers'][edge_index[1, :]].long()
 
         x_dist = self.dist_block(edge_distance, source_element, target_element)
 
@@ -291,7 +288,7 @@ class spinconv(BaseModel):
         energy = scatter(x, edge_index[1], dim=0, dim_size=data.num_nodes) / (
             self.max_num_neighbors / 2.0 + 1.0
         )
-        atomic_numbers = data.atomic_numbers.long()
+        atomic_numbers = data['atomic_numbers'].long()
         energy = self.energyembeddingblock(
             energy, atomic_numbers, atomic_numbers
         )
@@ -302,7 +299,7 @@ class spinconv(BaseModel):
                 forces = -1 * (
                     torch.autograd.grad(
                         energy,
-                        data.pos,
+                        data['atomic_numbers'],
                         grad_outputs=torch.ones_like(energy),
                         create_graph=True,
                     )[0]
@@ -311,7 +308,7 @@ class spinconv(BaseModel):
                 forces = self._compute_forces_random_rotations(
                     x,
                     self.num_random_rotations,
-                    data.atomic_numbers.long(),
+                    data['atomic_numbers'].long(),
                     edge_index,
                     edge_distance_vec,
                     data.batch,
