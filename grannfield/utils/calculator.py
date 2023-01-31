@@ -17,11 +17,11 @@ from grannfield.data.materials import AtomsConverter
 from grannfield.utils.units import Units
 
 
-class GrannFieldCalculatorError(Exception):
+class GraNNFieldCalculatorError(Exception):
     pass
 
 
-class GrannFieldCalculator(Calculator):
+class GraNNFieldCalculator(Calculator):
     """
     ASE md for schnetpack machine learning models.
 
