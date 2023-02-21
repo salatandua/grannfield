@@ -16,15 +16,14 @@ from math import pi as PI
 import numpy as np
 import torch
 import torch.nn as nn
+from torch_cluster import radius_graph
 from torch_geometric.nn import MessagePassing
 from torch_scatter import scatter
 
-from ocpmodels.common.registry import registry
-from ocpmodels.common.utils import get_pbc_distances, radius_graph_pbc
-from ocpmodels.datasets.embeddings import ATOMIC_RADII, CONTINUOUS_EMBEDDINGS
-from ocpmodels.models.base import BaseModel
-from ocpmodels.models.utils.activations import Act
-from ocpmodels.models.utils.basis import Basis, SphericalSmearing
+from grannfield.models.forcenet.basis import SphericalSmearing, Basis
+from grannfield.models.forcenet.embeddings import CONTINUOUS_EMBEDDINGS, ATOMIC_RADII
+from grannfield.utils.activations import Act
+from grannfield.utils.utils import radius_graph_pbc, get_pbc_distances
 
 
 class FNDecoder(nn.Module):
@@ -193,8 +192,7 @@ class InteractionBlock(MessagePassing):
 
 
 # flake8: noqa: C901
-@registry.register_model("forcenet")
-class ForceNet(BaseModel):
+class ForceNet(nn.Module):
     r"""Implementation of ForceNet architecture.
 
     Args:
@@ -237,9 +235,6 @@ class ForceNet(BaseModel):
 
     def __init__(
         self,
-        num_atoms,  # not used
-        bond_feat_dim,  # not used
-        num_targets,  # not used
         hidden_channels=512,
         num_interactions=5,
         cutoff=6.0,
@@ -388,9 +383,6 @@ class ForceNet(BaseModel):
 
             # if basis_type is spherical harmonics, then reduce to powersine
             if "sph" in self.basis_type:
-                logging.info(
-                    "Under onlydist ablation, spherical basis is reduced to powersine basis."
-                )
                 self.basis_type = "powersine"
                 self.pbc_sph = None
 
@@ -430,10 +422,7 @@ class ForceNet(BaseModel):
         self.energy_mlp = nn.Linear(self.output_dim, 1)
 
     def forward(self, data):
-        z = data.atomic_numbers.long()
-
-        pos = data.pos
-        batch = data.batch
+        z = data['atomic_numbers'].long()
 
         if self.feat == "simple":
             h = self.embedding(z)
@@ -442,18 +431,24 @@ class ForceNet(BaseModel):
         else:
             raise RuntimeError("Undefined feature type for atom")
 
-        (
-            edge_index,
-            edge_dist,
-            edge_vec,
-            cell_offsets,
-            _,  # cell offset distances
-            neighbors,
-        ) = self.generate_graph(data)
+        if self.use_pbc:
+            edge_index, cell_offsets, neighbors, _ = radius_graph_pbc(
+                data, self.cutoff, self.max_neighbors_num
+            )
+            pbc_distances = get_pbc_distances(
+                data['positions'],
+                edge_index,
+                data['cell'],
+                cell_offsets,
+                neighbors,
+                return_distances_vec=True
+            )
+            edge_dist = pbc_distances['distances']
+            edge_vec = pbc_distances['distances_vec']
+            data['edge_index'] = edge_index
+            data['cell_offsets'] = cell_offsets
+            data['neighbors'] = neighbors
 
-        data.edge_index = edge_index
-        data.cell_offsets = cell_offsets
-        data.neighbors = neighbors
 
         if self.pbc_apply_sph_harm:
             edge_vec_normalized = edge_vec / edge_dist.view(-1, 1)
@@ -511,7 +506,8 @@ class ForceNet(BaseModel):
         h = self.lin(h)
         h = self.activation(h)
 
-        out = scatter(h, batch, dim=0, reduce="add")
+        h = [torch.smm(h[idx_map], dim=0, keepdim=True) for idx_map in data['atom_idx']]
+        out = torch.cat(h, dim=0)
 
         force = self.decoder(h)
         energy = self.energy_mlp(out)

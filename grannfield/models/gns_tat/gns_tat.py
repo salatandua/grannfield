@@ -82,7 +82,7 @@ class GNS_TAT(nn.Module):
 
     def _forward(self, data):
         if self.use_pbc:
-            neighbors_index, cell_offsets, neighbors, _ = radius_graph_pbc(
+            neighbors_index, cell_offsets, _, neighbors = radius_graph_pbc(
                 data, self.cutoff, self.max_neighbors_num
             )
             pbc_distances = get_pbc_distances(

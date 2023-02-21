@@ -4,6 +4,7 @@ Clean Energy Lab, University of Toronto Scarborough
 
 salatandua/grannfield: https://github.com/salatandua/grannfield
 """
+
 import copy
 import json
 import logging
@@ -510,7 +511,7 @@ def radius_graph_pbc(data, radius, max_num_neighbors_threshold):
             max_num_neighbors <= max_num_neighbors_threshold
             or max_num_neighbors_threshold <= 0
     ):
-        return torch.stack((index2, index1)), unit_cell, num_neighbors_image, atom_distance_sqr.sqrt()
+        return torch.stack((index2, index1)), unit_cell, atom_distance_sqr.sqrt(), num_neighbors_image
     # atom_distance_sqr.sqrt() distance
 
     # Create a tensor of size [num_atoms, max_num_neighbors] to sort the distances of the neighbors.
@@ -561,7 +562,7 @@ def radius_graph_pbc(data, radius, max_num_neighbors_threshold):
 
     neighbors_index = torch.stack((index2, index1))
 
-    return neighbors_index, unit_cell, num_neighbors_image, atom_distance_sqr.sqrt()
+    return neighbors_index, unit_cell, atom_distance_sqr.sqrt(), num_neighbors_image
 
 
 def get_max_neighbors_mask(
@@ -666,7 +667,8 @@ def get_pbc_distances(
     distances = distances_vectors.norm(dim=-1)
 
     # redundancy: remove zero distances
-    nonzero_idx = torch.arange(len(distances))[distances != 0]
+    nonzero_idx = torch.arange(len(distances)).to(cell.device)
+    nonzero_idx = nonzero_idx[distances != 0]
     edge_index = edge_index[:, nonzero_idx]
     distances = distances[nonzero_idx]
 
