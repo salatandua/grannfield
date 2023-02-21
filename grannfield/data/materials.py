@@ -407,6 +407,21 @@ class ConcatMaterialsData(ConcatDataset):
 
         return self.datasets[dataset_idx].get_properties(sample_idx, load_only)
 
+    def get_atoms(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError(
+                    'absolute value of index should not exceed dataset length'
+                )
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+
+        return self.datasets[dataset_idx].get_atoms(sample_idx)
+
     def set_load_only(self, load_only):
         # check if properties are available
         for pname in load_only:
